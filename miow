@@ -1,0 +1,99 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <SoftwareSerial.h>
+#include <DFRobotDFPlayerMini.h>
+const int footSwitch = 2;   
+const int handSwitch = 3;   
+const int redLED = 4;       
+const int greenLED = 5;    
+const int rxPin = 7;        
+const int txPin = 8;       
+LiquidCrystal_I2C lcd(0x27, 16, 2);   
+SoftwareSerial mp3Serial(rxPin, txPin);
+DFRobotDFPlayerMini mp3;              
+unsigned long startTime = 0;      
+unsigned long reactionTime = 0;   
+unsigned long chronometerStart = 0;    
+unsigned long finalTime = 0;
+bool soundPlaying = false;        
+bool chronometerRunning = false;  
+bool resultDisplayed = false;  
+void setup() {
+  pinMode(footSwitch, INPUT_PULLUP);
+  pinMode(handSwitch, INPUT_PULLUP);
+  pinMode(redLED, OUTPUT);
+  pinMode(greenLED, OUTPUT);
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  digitalWrite(redLED, HIGH);   
+  digitalWrite(greenLED, LOW);  
+  mp3Serial.begin(9600);
+  if (!mp3.begin(mp3Serial)) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("MP3 Error!");
+    while (true);  
+  }
+  mp3.volume(20);  
+}
+void loop() {
+  if (digitalRead(footSwitch) == LOW && !soundPlaying) {
+    delay(100);  
+    if (digitalRead(footSwitch) == LOW) {  
+      soundPlaying = true;
+      startTime = millis();
+      mp3.play(1);  
+      digitalWrite(greenLED, HIGH);
+      digitalWrite(redLED, LOW);
+      resultDisplayed = false; 
+    }
+  }
+  if (digitalRead(footSwitch) == HIGH && soundPlaying) {
+    delay(100);
+    if (digitalRead(footSwitch) == HIGH) {  
+      soundPlaying = false;
+      reactionTime = millis() - startTime;  
+      mp3.stop();   
+      mp3.play(2);  
+      digitalWrite(greenLED, LOW);
+      chronometerRunning = true;
+      chronometerStart = millis(); 
+    }
+  }
+  if (digitalRead(handSwitch) == LOW && chronometerRunning) {
+    delay(100);  
+    if (digitalRead(handSwitch) == LOW) {  
+      chronometerRunning = false;
+      digitalWrite(greenLED, LOW);
+      digitalWrite(redLED, HIGH);
+      finalTime = millis() - chronometerStart;
+      if (!resultDisplayed) {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print(finalTime / 1000.0, 3);
+        lcd.setCursor(0, 1);
+        lcd.print(reactionTime / 1000.0, 3); 
+        resultDisplayed = true;
+      }
+    }
+  }
+  if (digitalRead(handSwitch) == LOW && resultDisplayed) {
+    delay(500); 
+    if (digitalRead(handSwitch) == LOW) {  
+      resetSystem();
+    }
+  }
+}
+void resetSystem() {
+  soundPlaying = false;
+  chronometerRunning = false;
+  resultDisplayed = false;
+  startTime = 0;
+  reactionTime = 0;
+  chronometerStart = 0;
+  finalTime = 0;
+  lcd.clear();
+  digitalWrite(redLED, HIGH);
+  digitalWrite(greenLED, LOW);
+}
