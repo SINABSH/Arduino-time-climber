@@ -12,12 +12,14 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 SoftwareSerial mp3Serial(rxPin, txPin);
 DFRobotDFPlayerMini mp3;              
 unsigned long startTime = 0;      
+unsigned long reactionStart = 0;  
 unsigned long reactionTime = 0;   
 unsigned long chronometerStart = 0;    
 unsigned long finalTime = 0;
 bool soundPlaying = false;        
 bool chronometerRunning = false;  
 bool resultDisplayed = false;  
+bool reactionStarted = false;
 void setup() {
   pinMode(footSwitch, INPUT_PULLUP);
   pinMode(handSwitch, INPUT_PULLUP);
@@ -42,20 +44,23 @@ void loop() {
     delay(100);  
     if (digitalRead(footSwitch) == LOW) {  
       soundPlaying = true;
-      startTime = millis();
-      mp3.play(1);  
+      mp3.play(1); 
       digitalWrite(greenLED, HIGH);
       digitalWrite(redLED, LOW);
       resultDisplayed = false; 
     }
   }
-  if (digitalRead(footSwitch) == HIGH && soundPlaying) {
-    delay(100);
+  if (soundPlaying && !reactionStarted && mp3.available() == 0) { 
+    reactionStart = millis();  
+    reactionStarted = true;  
+  }
+  if (digitalRead(footSwitch) == HIGH && reactionStarted) {
+    delay(100);  
     if (digitalRead(footSwitch) == HIGH) {  
       soundPlaying = false;
-      reactionTime = millis() - startTime;  
+      reactionTime = millis() - reactionStart;  
       mp3.stop();   
-      mp3.play(2);  
+      mp3.play(2); 
       digitalWrite(greenLED, LOW);
       chronometerRunning = true;
       chronometerStart = millis(); 
@@ -73,13 +78,13 @@ void loop() {
         lcd.setCursor(0, 0);
         lcd.print(finalTime / 1000.0, 3);
         lcd.setCursor(0, 1);
-        lcd.print(reactionTime / 1000.0, 3); 
+        lcd.print(reactionTime / 1000.0, 3);
         resultDisplayed = true;
       }
     }
   }
   if (digitalRead(handSwitch) == LOW && resultDisplayed) {
-    delay(500); 
+    delay(500);  
     if (digitalRead(handSwitch) == LOW) {  
       resetSystem();
     }
@@ -89,7 +94,9 @@ void resetSystem() {
   soundPlaying = false;
   chronometerRunning = false;
   resultDisplayed = false;
+  reactionStarted = false;
   startTime = 0;
+  reactionStart = 0;
   reactionTime = 0;
   chronometerStart = 0;
   finalTime = 0;
