@@ -1,106 +1,149 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <SoftwareSerial.h>
 #include <DFRobotDFPlayerMini.h>
-const int footSwitch = 2;   
-const int handSwitch = 3;   
-const int redLED = 4;       
-const int greenLED = 5;    
-const int rxPin = 7;        
-const int txPin = 8;       
-LiquidCrystal_I2C lcd(0x27, 16, 2);   
-SoftwareSerial mp3Serial(rxPin, txPin);
-DFRobotDFPlayerMini mp3;              
-unsigned long startTime = 0;      
-unsigned long reactionStart = 0;  
-unsigned long reactionTime = 0;   
-unsigned long chronometerStart = 0;    
-unsigned long finalTime = 0;
-bool soundPlaying = false;        
-bool chronometerRunning = false;  
-bool resultDisplayed = false;  
-bool reactionStarted = false;
+#include <SoftwareSerial.h>
+#define FOOT_SWITCH_PIN 2
+#define HAND_SWITCH_PIN 3
+#define RED_LED_PIN 4
+#define GREEN_LED_PIN 5
+#define DFPLAYER_RX 10
+#define DFPLAYER_TX 11
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+SoftwareSerial dfPlayerSerial(DFPLAYER_RX, DFPLAYER_TX);
+DFRobotDFPlayerMini dfPlayer;
+unsigned long startTime = 0;
+unsigned long mainTimerStart = 0;
+unsigned long reactionTime = 0;
+const unsigned long sound1Duration = 3000;
+const unsigned long peak1 = 500;
+const unsigned long peak2 = 1500;
+const unsigned long peak3 = 2500;
+const unsigned long greenLedDuration = 100;
+const unsigned long mainTimerOffset = -1000;
 void setup() {
-  pinMode(footSwitch, INPUT_PULLUP);
-  pinMode(handSwitch, INPUT_PULLUP);
-  pinMode(redLED, OUTPUT);
-  pinMode(greenLED, OUTPUT);
+  Serial.begin(9600);
+  pinMode(FOOT_SWITCH_PIN, INPUT_PULLUP);
+  pinMode(HAND_SWITCH_PIN, INPUT_PULLUP);
+  pinMode(RED_LED_PIN, OUTPUT);
+  pinMode(GREEN_LED_PIN, OUTPUT);
+  digitalWrite(RED_LED_PIN, HIGH);
+  digitalWrite(GREEN_LED_PIN, LOW);
   lcd.init();
   lcd.backlight();
-  lcd.clear();
-  digitalWrite(redLED, HIGH);   
-  digitalWrite(greenLED, LOW);  
-  mp3Serial.begin(9600);
-  if (!mp3.begin(mp3Serial)) {
+  lcd.setCursor(0, 0);
+  lcd.print("READY");
+  dfPlayerSerial.begin(9600);
+  if (dfPlayer.begin(dfPlayerSerial)) {
+    dfPlayer.volume(10);
+    Serial.println("DFPlayer Ready");
+  } else {
+    Serial.println("DFPlayer Initialization Failed");
+    lcd.setCursor(0, 1);
+    lcd.print("MP3 ERROR");
+    delay(2000);
     lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("MP3 Error!");
-    while (true);  
+    lcd.print("READY");
   }
-  mp3.volume(20);  
 }
 void loop() {
-  if (digitalRead(footSwitch) == LOW && !soundPlaying) {
-    delay(100);  
-    if (digitalRead(footSwitch) == LOW) {  
-      soundPlaying = true;
-      mp3.play(1); 
-      digitalWrite(greenLED, HIGH);
-      digitalWrite(redLED, LOW);
-      resultDisplayed = false; 
-    }
-  }
-  if (soundPlaying && !reactionStarted && mp3.available() == 0) { 
-    reactionStart = millis();  
-    reactionStarted = true;  
-  }
-  if (digitalRead(footSwitch) == HIGH && reactionStarted) {
-    delay(100);  
-    if (digitalRead(footSwitch) == HIGH) {  
-      soundPlaying = false;
-      reactionTime = millis() - reactionStart;  
-      mp3.stop();   
-      mp3.play(2); 
-      digitalWrite(greenLED, LOW);
-      chronometerRunning = true;
-      chronometerStart = millis(); 
-    }
-  }
-  if (digitalRead(handSwitch) == LOW && chronometerRunning) {
-    delay(100);  
-    if (digitalRead(handSwitch) == LOW) {  
-      chronometerRunning = false;
-      digitalWrite(greenLED, LOW);
-      digitalWrite(redLED, HIGH);
-      finalTime = millis() - chronometerStart;
-      if (!resultDisplayed) {
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print(finalTime / 1000.0, 3);
-        lcd.setCursor(0, 1);
-        lcd.print(reactionTime / 1000.0, 3);
-        resultDisplayed = true;
-      }
-    }
-  }
-  if (digitalRead(handSwitch) == LOW && resultDisplayed) {
-    delay(500);  
-    if (digitalRead(handSwitch) == LOW) {  
-      resetSystem();
-    }
+  debounceSwitch(FOOT_SWITCH_PIN);
+  if (digitalRead(FOOT_SWITCH_PIN) == LOW) {
+    handleFootSwitch();
   }
 }
-void resetSystem() {
-  soundPlaying = false;
-  chronometerRunning = false;
-  resultDisplayed = false;
-  reactionStarted = false;
-  startTime = 0;
-  reactionStart = 0;
-  reactionTime = 0;
-  chronometerStart = 0;
-  finalTime = 0;
+void debounceSwitch(int pin) {
+  if (digitalRead(pin) == LOW) {
+    delay(50);
+    while (digitalRead(pin) == LOW);
+    delay(50);
+  }
+}
+void handleFootSwitch() {
   lcd.clear();
-  digitalWrite(redLED, HIGH);
-  digitalWrite(greenLED, LOW);
+  lcd.print("Playing Sound 1");
+  dfPlayer.play(1);
+  startTime = millis();
+  while (millis() - startTime < sound1Duration) {
+    unsigned long elapsed = millis() - startTime;
+    if (elapsed >= peak1 && elapsed < peak1 + greenLedDuration) {
+      digitalWrite(GREEN_LED_PIN, HIGH);
+    } else if (elapsed >= peak2 && elapsed < peak2 + greenLedDuration) {
+      digitalWrite(GREEN_LED_PIN, HIGH);
+    } else if (elapsed >= peak3 && elapsed < peak3 + greenLedDuration) {
+      digitalWrite(GREEN_LED_PIN, HIGH);
+    } else {
+      digitalWrite(GREEN_LED_PIN, LOW);
+    }
+    if (digitalRead(FOOT_SWITCH_PIN) == HIGH) {
+      cheatingDetection();
+      return;
+    }
+  }
+  reactionTimeMeasurement();
+}
+void cheatingDetection() {
+  dfPlayer.play(2);
+  delay(100);
+  lcd.clear();
+  lcd.print("Taghalob");
+  Serial.println("Cheating Detected");
+  while (dfPlayer.readState() == 1) {
+    delay(100);
+  }
+  delay(1000);
+  lcd.clear();
+  lcd.print("READY");
+}
+void reactionTimeMeasurement() {
+  lcd.clear();
+  lcd.print("Waiting...");
+  debounceSwitch(FOOT_SWITCH_PIN);
+  while (digitalRead(FOOT_SWITCH_PIN) == LOW);
+  reactionTime = millis() - startTime - sound1Duration;
+  if (reactionTime <= 99) 
+    dfPlayer.play(2);
+  if (reactionTime < 0) reactionTime = 0;
+  Serial.print("Reaction Time: ");
+  Serial.println(reactionTime);
+  mainTimerStart = millis() - 1000;
+  runMainTimer();
+}
+void runMainTimer() {
+  unsigned long timeout = millis() + 60000;
+  while (millis() < timeout) {
+    unsigned long elapsed = millis() - mainTimerStart;
+    lcd.setCursor(0, 0);
+    lcd.print("Time: ");
+    elapsed = elapsed + reactionTime;
+    elapsed = elapsed + mainTimerOffset; 
+    lcd.print(elapsed / 1000.0, 3);
+    lcd.setCursor(0, 1);
+    lcd.print("Reaction: ");
+    lcd.print(reactionTime / 1000.0, 3);
+    delay(100);
+    if (digitalRead(HAND_SWITCH_PIN) == LOW) {
+      stopTimer(elapsed);
+      return;
+    }
+  }
+  Serial.println("Timeout Error");
+  lcd.clear();
+  lcd.print("Timeout");
+  delay(5000);
+  lcd.clear();
+  lcd.print("READY");
+}
+void stopTimer(unsigned long elapsed) {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("FinalTime:");
+  lcd.print(elapsed / 1000.0, 3);
+  lcd.setCursor(0, 1);
+  lcd.print("Reaction:");
+  lcd.print(reactionTime / 1000.0, 3);
+  Serial.print("FinalTime:");
+  Serial.println(elapsed);
+  delay(20000);
+  lcd.clear();
+  lcd.print("READY");
 }
